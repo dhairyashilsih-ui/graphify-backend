@@ -7,6 +7,7 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
 
 // Configure CORS to allow requests from your frontend
 app.use(cors({
@@ -44,6 +45,14 @@ app.get('/health', (req, res) => {
     message: 'Graphify Backend API is running',
     timestamp: new Date().toISOString()
   });
+});
+
+// Expose Google client ID (public-safe)
+app.get('/api/config/google-client-id', (_req, res) => {
+  if (!GOOGLE_CLIENT_ID) {
+    return res.status(503).json({ success: false, error: 'Google client ID not configured' });
+  }
+  res.json({ success: true, clientId: GOOGLE_CLIENT_ID });
 });
 
 // Save conversation
