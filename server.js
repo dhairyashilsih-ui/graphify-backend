@@ -8,6 +8,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID;
+const GROQ_API_KEY = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY;
 
 // Configure CORS to allow requests from your frontend
 app.use(cors({
@@ -53,6 +54,54 @@ app.get('/api/config/google-client-id', (_req, res) => {
     return res.status(503).json({ success: false, error: 'Google client ID not configured' });
   }
   res.json({ success: true, clientId: GOOGLE_CLIENT_ID });
+});
+
+// Proxy to Groq chat completions
+app.post('/api/groq/chat', async (req, res) => {
+  if (!GROQ_API_KEY) {
+    return res.status(503).json({ success: false, error: 'Groq API key not configured on server' });
+  }
+
+  const { messages, responseFormat, maxTokens, temperature } = req.body || {};
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ success: false, error: 'messages array is required' });
+  }
+
+  try {
+    const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'mixtral-8x7b-32768',
+        messages,
+        temperature: temperature ?? 0.3,
+        max_tokens: maxTokens ?? 512,
+        ...(responseFormat ? { response_format: { type: responseFormat } } : {})
+      })
+    });
+
+    if (!groqResponse.ok) {
+      const err = await groqResponse.json().catch(() => ({}));
+      console.error('Groq proxy error', groqResponse.status, err);
+      return res
+        .status(groqResponse.status)
+        .json({ success: false, error: err.error?.message || `Groq proxy error (${groqResponse.status})` });
+    }
+
+    const data = await groqResponse.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) {
+      return res.status(500).json({ success: false, error: 'No content returned from Groq' });
+    }
+
+    return res.json({ success: true, content });
+  } catch (error) {
+    console.error('Groq proxy exception', error);
+    return res.status(500).json({ success: false, error: 'Failed to reach Groq service' });
+  }
 });
 
 // Save conversation
@@ -169,6 +218,7 @@ app.post('/api/users', async (req, res) => {
           emailVerified: user.emailVerified,
           hd: user.hd,
           locale: user.locale,
+          phone: user.phone,
           lastLoginAt: new Date()
         },
         $setOnInsert: {
@@ -187,11 +237,11 @@ app.post('/api/users', async (req, res) => {
 
 function validateUserPayload(user) {
   if (!user || typeof user !== 'object') return false;
-  const { email, name, sub, picture, emailVerified, hd, locale } = user;
+  const { email, name, sub, picture, emailVerified, hd, locale, phone } = user;
   if (typeof email !== 'string' || email.trim().length === 0) return false;
   if (typeof name !== 'string' || name.trim().length === 0) return false;
 
-  const optionalStrings = [sub, picture, hd, locale].filter(Boolean);
+  const optionalStrings = [sub, picture, hd, locale, phone].filter(Boolean);
   const optionalValid = optionalStrings.every((v) => typeof v === 'string');
   if (!optionalValid) return false;
 
