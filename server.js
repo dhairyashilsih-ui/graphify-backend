@@ -13,7 +13,7 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true,
   methods: ['GET', 'POST', 'DELETE', 'PUT', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id']
 }));
 
 app.use(express.json());
@@ -132,6 +132,64 @@ app.delete('/api/conversations/:sessionId', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// Save or update user profile
+app.post('/api/users', async (req, res) => {
+  try {
+    const { user } = req.body || {};
+
+    if (!validateUserPayload(user)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid user payload'
+      });
+    }
+
+    const users = db.collection('users');
+    const key = user.sub || user.email;
+
+    await users.updateOne(
+      { key },
+      {
+        $set: {
+          key,
+          sub: user.sub,
+          email: user.email,
+          name: user.name,
+          picture: user.picture,
+          emailVerified: user.emailVerified,
+          hd: user.hd,
+          locale: user.locale,
+          lastLoginAt: new Date()
+        },
+        $setOnInsert: {
+          createdAt: new Date()
+        }
+      },
+      { upsert: true }
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving user profile:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+function validateUserPayload(user) {
+  if (!user || typeof user !== 'object') return false;
+  const { email, name, sub, picture, emailVerified, hd, locale } = user;
+  if (typeof email !== 'string' || email.trim().length === 0) return false;
+  if (typeof name !== 'string' || name.trim().length === 0) return false;
+
+  const optionalStrings = [sub, picture, hd, locale].filter(Boolean);
+  const optionalValid = optionalStrings.every((v) => typeof v === 'string');
+  if (!optionalValid) return false;
+
+  if (emailVerified !== undefined && typeof emailVerified !== 'boolean') return false;
+
+  return true;
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {
