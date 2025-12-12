@@ -75,7 +75,7 @@ app.post('/api/groq/chat', async (req, res) => {
         Authorization: `Bearer ${GROQ_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'mixtral-8x7b-32768',
+        model: 'llama-3.1-8b-instant',
         messages,
         temperature: temperature ?? 0.3,
         max_tokens: maxTokens ?? 512,
